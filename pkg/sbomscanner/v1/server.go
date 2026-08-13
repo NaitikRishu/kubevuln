@@ -30,12 +30,6 @@ import (
 	"github.com/kubescape/storage/pkg/apis/softwarecomposition/v1beta1"
 )
 
-// isRegistryRateLimited reports whether err is (or wraps) a registry 429 response.
-// It delegates to tools.IsRateLimitError.
-func isRegistryRateLimited(err error) bool {
-	return tools.IsRateLimitError(err)
-}
-
 // isPlatformMismatch reports whether err is (or wraps) stereoscope's
 // *image.ErrPlatformMismatch, returned once a provider has positively resolved the image but
 // its OS/architecture doesn't match the platform that was requested.
@@ -254,7 +248,7 @@ func (s *scannerServer) CreateSBOM(ctx context.Context, req *pb.CreateSBOMReques
 			ErrorMessage: err.Error(),
 			StatusReason: domain.ReasonPlatformNotFound,
 		}, nil
-	case err != nil && isRegistryRateLimited(err):
+	case err != nil && tools.IsRateLimitError(err):
 		// StatusReason travels over gRPC as a plain string, so the caller (adapters/v1
 		// SidecarSBOMAdapter.CreateSBOM) reconstructs a *transport.Error from it to keep
 		// ScanService.checkCreateSBOM's errors.As(...) check working the same way it does

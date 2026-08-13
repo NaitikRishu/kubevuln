@@ -28,6 +28,7 @@ import (
 	"github.com/kubescape/kubevuln/core/domain"
 	"github.com/kubescape/kubevuln/internal/metrics"
 	"github.com/kubescape/kubevuln/internal/registryauth"
+	"github.com/kubescape/kubevuln/internal/tools"
 	pb "github.com/kubescape/kubevuln/pkg/sbomscanner/v1/proto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -552,7 +553,7 @@ func TestIsRegistryRateLimited(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isRegistryRateLimited(tt.err))
+			assert.Equal(t, tt.want, tools.IsRateLimitError(tt.err))
 		})
 	}
 }
@@ -753,10 +754,10 @@ func TestCreateSBOM_TimeoutDoesNotRaceWithAbandonedSyft(t *testing.T) {
 	assert.Equal(t, helpersv1.Incomplete, resp.Status, "the late write must not affect the response")
 }
 
-func TestCreateSBOM_RateLimit_PreservesReason(t *testing.T) {
+func TestCreateSBOM_Exhausted429RateLimitFromResolveSource(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
-		_, _ = w.Write([]byte(`{"errors":[{"code":"TOOMANYREQUESTS","message":"rate limited"}]}`))
+		_, _ = w.Write([]byte(`status code: 429`))
 	}))
 	defer server.Close()
 
@@ -779,5 +780,6 @@ func TestCreateSBOM_RateLimit_PreservesReason(t *testing.T) {
 	require.NotNil(t, resp)
 	assert.Equal(t, domain.ReasonTooManyRequests, resp.StatusReason)
 }
+
 
 
