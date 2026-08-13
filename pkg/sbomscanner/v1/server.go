@@ -212,10 +212,11 @@ func (s *scannerServer) CreateSBOM(ctx context.Context, req *pb.CreateSBOMReques
 	}()
 
 	// Download image from registry, retrying on 429 rate-limit errors with exponential backoff.
+	// Pulls intentionally run on a detached context (see #421); the request ctx is used only for the registry auth provider inside resolveSource.
 	logger.L().Debug("downloading image", helpers.String("imageID", imageID))
-	src, err := tools.RetryWithBackoff(ctx, "source_resolution", tools.Default429RetryConfig(), tools.IsRateLimitError, func(rCtx context.Context) (source.Source, error) {
+	detachedCtx := context.WithoutCancel(ctx)
+	src, err := tools.RetryWithBackoff(detachedCtx, "source_resolution", tools.Default429RetryConfig(), tools.IsRateLimitError, func(rCtx context.Context) (source.Source, error) {
 		return resolveSource(rCtx, func(_ context.Context, ref string, opts *image.RegistryOptions) (source.Source, error) {
-			// Pulls intentionally run on a detached context (see #421); the request ctx is used only for the registry auth provider inside resolveSource.
 			//nolint:staticcheck // stereoscope expects string key image.MaxImageSize
 			ctxWithSize := context.WithValue(context.Background(), image.MaxImageSize, req.MaxImageSize)
 			return syft.GetSource(ctxWithSize, ref,
@@ -327,6 +328,13 @@ func (s *scannerServer) CreateSBOM(ctx context.Context, req *pb.CreateSBOMReques
 		logger.L().Warning("Syft timed out", helpers.String("imageID", imageID))
 		return &pb.CreateSBOMResponse{
 			Status:           helpersv1.Incomplete,
+			ResolvedPlatform: resolvedPlatform,
+		}, nil
+	case err != nil && tools.IsRateLimitError(err):
+		return &pb.CreateSBOMResponse{
+			Status:           helpersv1.Incomplete,
+			ErrorMessage:     err.Error(),
+			StatusReason:     domain.ReasonTooManyRequests,
 			ResolvedPlatform: resolvedPlatform,
 		}, nil
 	case err == nil:

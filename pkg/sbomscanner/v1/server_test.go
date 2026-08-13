@@ -752,3 +752,32 @@ func TestCreateSBOM_TimeoutDoesNotRaceWithAbandonedSyft(t *testing.T) {
 	}
 	assert.Equal(t, helpersv1.Incomplete, resp.Status, "the late write must not affect the response")
 }
+
+func TestCreateSBOM_RateLimit_PreservesReason(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"errors":[{"code":"TOOMANYREQUESTS","message":"rate limited"}]}`))
+	}))
+	defer server.Close()
+
+	u, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	client, cleanup := startTestServer(t)
+	defer cleanup()
+
+	resp, err := client.CreateSBOM(context.Background(), &pb.CreateSBOMRequest{
+		ImageId:         u.Host + "/test-image",
+		ImageTag:        u.Host + "/test-image:latest",
+		Platform:        "linux/amd64",
+		MaxImageSize:    1 << 30,
+		MaxSbomSize:     1 << 30,
+		TimeoutSeconds:  5,
+		InsecureUseHttp: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	assert.Equal(t, domain.ReasonTooManyRequests, resp.StatusReason)
+}
+
+
